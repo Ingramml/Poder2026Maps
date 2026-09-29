@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ed Hermes Support - CD4 Precincts</title>
+<title>CD4 Survey Results</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -13,12 +13,14 @@
   .legend {
     background: white; padding: 12px 16px; border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2); line-height: 1.8; font-family: system-ui;
+    max-width: 200px;
   }
   .legend h4 { margin-bottom: 6px; font-size: 13px; }
   .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
   .legend-color { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #999; flex-shrink: 0; }
   .pie-popup { text-align: center; font-family: system-ui; min-width: 220px; }
   .pie-popup h3 { font-size: 15px; margin-bottom: 4px; color: #333; }
+  .pie-popup .subtitle { font-size: 11px; color: #888; margin-bottom: 2px; }
   .pie-popup .total { font-size: 12px; color: #666; margin-bottom: 8px; }
   .pie-popup canvas { margin: 0 auto; }
   .pie-popup .breakdown { font-size: 11px; text-align: left; margin-top: 8px; }
@@ -29,25 +31,28 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-family: system-ui; font-size: 12px;
     border: none;
   }
+  .leaflet-control-layers { font-family: system-ui; }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <script>
-const COLORS = {
-  strong_support: '#0B413E',
-  medium_support: '#4F9A94',
-  neutral: '#C9BFC3',
-  medium_oppose: '#CF86A6',
-  strong_oppose: '#7B1E4B'
-};
-
-const LABELS = {
-  strong_support: 'Strong Support',
-  medium_support: 'Medium Support',
-  neutral: 'Neutral',
-  medium_oppose: 'Medium Oppose',
-  strong_oppose: 'Strong Oppose'
+// Layer configurations
+const LAYER_CONFIG = {
+  edhermes: {
+    name: 'Ed Hermes Support',
+    file: 'precincts.geojson',
+    categories: ['strong_support','medium_support','neutral','medium_oppose','strong_oppose'],
+    colors: ['#0B413E','#4F9A94','#C9BFC3','#CF86A6','#7B1E4B'],
+    labels: ['Strong Support','Medium Support','Neutral','Medium Oppose','Strong Oppose']
+  },
+  voteplan: {
+    name: '2026 Vote Plan',
+    file: 'voteplan.geojson',
+    categories: ['mailing_back','voting_in_person','not_voting'],
+    colors: ['#0B413E','#4F9A94','#7B1E4B'],
+    labels: ['Mailing Back','Voting In Person','Not Voting']
+  }
 };
 
 const FILL_COLORS = [
@@ -67,28 +72,10 @@ function getFillColor(total) {
   return color;
 }
 
-const map = L.map('map').setView([33.48, -112.05], 12);
+function buildLayer(geojsonData, config) {
+  const group = L.layerGroup();
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  maxZoom: 19
-}).addTo(map);
-
-const tooltip = L.tooltip({ sticky: true, className: 'info-tooltip' });
-
-// Load data
-Promise.all([
-  fetch('precincts.geojson').then(r => r.json()),
-  fetch('cd4.geojson').then(r => r.json())
-]).then(([precincts, cd4]) => {
-
-  // CD4 boundary
-  L.geoJSON(cd4, {
-    style: { color: '#FF4500', weight: 2.5, fill: false, dashArray: '8,4' }
-  }).addTo(map);
-
-  // Precincts
-  const precinctsLayer = L.geoJSON(precincts, {
+  const polygonLayer = L.geoJSON(geojsonData, {
     style: function(feature) {
       const total = feature.properties.total_responses;
       return {
@@ -101,7 +88,6 @@ Promise.all([
     onEachFeature: function(feature, layer) {
       const p = feature.properties;
 
-      // Tooltip on hover
       layer.on('mouseover', function(e) {
         let tip = `<strong>${p.Precinct_Cap}</strong>`;
         if (p.total_responses > 0) tip += `<br>${p.total_responses} responses`;
@@ -111,51 +97,47 @@ Promise.all([
       layer.on('mouseout', function() {
         layer.closeTooltip();
         layer.unbindTooltip();
-        precinctsLayer.resetStyle(layer);
+        polygonLayer.resetStyle(layer);
       });
 
-      // Popup with pie chart on click
       if (p.total_responses > 0) {
         layer.on('click', function(e) {
-          const canvasId = 'pie-' + p.district_id;
-          const categories = ['strong_support','medium_support','neutral','medium_oppose','strong_oppose'];
-          const values = categories.map(c => p[c]);
-          const colors = categories.map(c => COLORS[c]);
-          const labels = categories.map(c => LABELS[c]);
+          const canvasId = 'pie-' + config.name.replace(/\s/g,'') + '-' + p.Precinct_Cap;
+          const values = config.categories.map(c => p[c] || 0);
 
           let breakdownHtml = '';
-          categories.forEach((c, i) => {
+          config.categories.forEach((c, i) => {
             if (values[i] > 0) {
               const pct = Math.round(values[i] / p.total_responses * 100);
-              breakdownHtml += `<div><span class="dot" style="background:${colors[i]}"></span>${labels[i]}: ${values[i]} (${pct}%)</div>`;
+              breakdownHtml += `<div><span class="dot" style="background:${config.colors[i]}"></span>${config.labels[i]}: ${values[i]} (${pct}%)</div>`;
             }
           });
 
           const html = `
             <div class="pie-popup">
               <h3>${p.Precinct_Cap}</h3>
+              <div class="subtitle">${config.name}</div>
               <div class="total">${p.total_responses} total responses</div>
               <canvas id="${canvasId}" width="160" height="160"></canvas>
               <div class="breakdown">${breakdownHtml}</div>
             </div>
           `;
 
-          const popup = L.popup({ maxWidth: 260 })
+          L.popup({ maxWidth: 260 })
             .setLatLng(e.latlng)
             .setContent(html)
             .openOn(map);
 
-          // Render pie chart after popup opens
           setTimeout(() => {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
             new Chart(canvas, {
               type: 'pie',
               data: {
-                labels: labels,
+                labels: config.labels,
                 datasets: [{
                   data: values,
-                  backgroundColor: colors,
+                  backgroundColor: config.colors,
                   borderWidth: 1,
                   borderColor: '#fff'
                 }]
@@ -179,10 +161,12 @@ Promise.all([
         });
       }
     }
-  }).addTo(map);
+  });
 
-  // Precinct labels
-  precinctsLayer.eachLayer(function(layer) {
+  polygonLayer.addTo(group);
+
+  // Labels
+  polygonLayer.eachLayer(function(layer) {
     const center = layer.getBounds().getCenter();
     const name = layer.feature.properties.Precinct_Cap;
     L.marker(center, {
@@ -195,35 +179,84 @@ Promise.all([
         iconSize: [0, 0]
       }),
       interactive: false
-    }).addTo(map);
+    }).addTo(group);
   });
 
-  // Fit to CD4 bounds
+  return group;
+}
+
+const map = L.map('map').setView([33.48, -112.05], 12);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19
+}).addTo(map);
+
+// Load all data
+Promise.all([
+  fetch('precincts.geojson').then(r => r.json()),
+  fetch('voteplan.geojson').then(r => r.json()),
+  fetch('cd4.geojson').then(r => r.json())
+]).then(([precincts, voteplan, cd4]) => {
+
+  // CD4 boundary (always visible)
+  L.geoJSON(cd4, {
+    style: { color: '#FF4500', weight: 2.5, fill: false, dashArray: '8,4' }
+  }).addTo(map);
+
+  // Build toggle layers
+  const edHermesLayer = buildLayer(precincts, LAYER_CONFIG.edhermes);
+  const votePlanLayer = buildLayer(voteplan, LAYER_CONFIG.voteplan);
+
+  // Add Ed Hermes as default
+  edHermesLayer.addTo(map);
+
+  // Layer control
+  const overlays = {
+    'Ed Hermes Support': edHermesLayer,
+    '2026 Vote Plan': votePlanLayer
+  };
+
+  L.control.layers(overlays, null, {
+    collapsed: false,
+    position: 'topright'
+  }).addTo(map);
+
+  // Fit to CD4
   map.fitBounds(L.geoJSON(cd4).getBounds().pad(0.05));
 });
 
 // Legend
-const legend = L.control({ position: 'bottomright' });
-legend.onAdd = function() {
+const legendControl = L.control({ position: 'bottomright' });
+legendControl.onAdd = function() {
   const div = L.DomUtil.create('div', 'legend');
-  div.innerHTML = `
-    <h4>Ed Hermes Support</h4>
-    <div class="legend-item"><span class="legend-color" style="background:#0B413E"></span>Strong Support</div>
-    <div class="legend-item"><span class="legend-color" style="background:#4F9A94"></span>Medium Support</div>
-    <div class="legend-item"><span class="legend-color" style="background:#C9BFC3"></span>Neutral</div>
-    <div class="legend-item"><span class="legend-color" style="background:#CF86A6"></span>Medium Oppose</div>
-    <div class="legend-item"><span class="legend-color" style="background:#7B1E4B"></span>Strong Oppose</div>
-    <hr style="margin:6px 0;border:none;border-top:1px solid #ddd">
-    <h4>Response Count</h4>
-    <div class="legend-item"><span class="legend-color" style="background:rgba(198,219,239,0.6)"></span>1-10</div>
-    <div class="legend-item"><span class="legend-color" style="background:rgba(158,202,225,0.6)"></span>11-30</div>
-    <div class="legend-item"><span class="legend-color" style="background:rgba(107,174,214,0.6)"></span>31-60</div>
-    <div class="legend-item"><span class="legend-color" style="background:rgba(49,130,189,0.6)"></span>61-100</div>
-    <div class="legend-item"><span class="legend-color" style="background:rgba(8,81,156,0.6)"></span>101-200</div>
-  `;
+  div.id = 'legend-content';
+  div.innerHTML = getLegendHtml('edhermes');
   return div;
 };
-legend.addTo(map);
+legendControl.addTo(map);
+
+function getLegendHtml(layerKey) {
+  const config = LAYER_CONFIG[layerKey];
+  let html = `<h4>${config.name}</h4>`;
+  config.labels.forEach((label, i) => {
+    html += `<div class="legend-item"><span class="legend-color" style="background:${config.colors[i]}"></span>${label}</div>`;
+  });
+  html += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
+  html += '<h4>Response Count</h4>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(198,219,239,0.6)"></span>1-10</div>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(158,202,225,0.6)"></span>11-30</div>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(107,174,214,0.6)"></span>31-60</div>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(49,130,189,0.6)"></span>61-100</div>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(8,81,156,0.6)"></span>101-200</div>';
+  return html;
+}
+
+// Update legend when layer changes
+map.on('baselayerchange', function(e) {
+  const key = e.name === '2026 Vote Plan' ? 'voteplan' : 'edhermes';
+  document.getElementById('legend-content').innerHTML = getLegendHtml(key);
+});
 </script>
 </body>
 </html>
