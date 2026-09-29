@@ -32,6 +32,11 @@
     border: none;
   }
   .leaflet-control-layers { font-family: system-ui; }
+  .map-title {
+    background: white; padding: 10px 20px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-family: system-ui;
+    font-size: 18px; font-weight: bold; color: #333;
+  }
 </style>
 </head>
 <body>
@@ -225,6 +230,15 @@ Promise.all([
   // Fit to CD4
   map.fitBounds(L.geoJSON(cd4).getBounds().pad(0.05));
 });
+
+// Title
+const titleControl = L.control({ position: 'topleft' });
+titleControl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'map-title');
+  div.innerHTML = 'CD4 Survey Results';
+  return div;
+};
+titleControl.addTo(map);
 
 // Legend
 const legendControl = L.control({ position: 'bottomright' });
