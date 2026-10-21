@@ -58,6 +58,13 @@ const LAYER_CONFIG = {
     categories: ['mailing_back','voting_in_person','not_voting','already_voted'],
     colors: ['#B71C1C','#E57373','#4A0404','#FF8C00'],
     labels: ['Mailing Back','Voting In Person','Not Voting','Already Voted']
+  },
+  votescast: {
+    name: 'Votes Cast',
+    file: 'votescast.geojson',
+    categories: ['votes_cast'],
+    colors: ['#1B5E20'],
+    labels: ['Votes Cast']
   }
 };
 
@@ -203,8 +210,9 @@ const cb = '?v=' + Date.now();
 Promise.all([
   fetch('precincts.geojson' + cb).then(r => r.json()),
   fetch('voteplan.geojson' + cb).then(r => r.json()),
-  fetch('cd4.geojson' + cb).then(r => r.json())
-]).then(([precincts, voteplan, cd4]) => {
+  fetch('cd4.geojson' + cb).then(r => r.json()),
+  fetch('votescast.geojson' + cb).then(r => r.json())
+]).then(([precincts, voteplan, cd4, votescast]) => {
 
   // CD4 boundary (always visible)
   L.geoJSON(cd4, {
@@ -214,6 +222,7 @@ Promise.all([
   // Build toggle layers
   const edHermesLayer = buildLayer(precincts, LAYER_CONFIG.edhermes);
   const votePlanLayer = buildLayer(voteplan, LAYER_CONFIG.voteplan);
+  const votesCastLayer = buildLayer(votescast, LAYER_CONFIG.votescast);
 
   // Add Ed Hermes as default
   edHermesLayer.addTo(map);
@@ -221,7 +230,8 @@ Promise.all([
   // Layer control
   const overlays = {
     'Ed Hermes Support': edHermesLayer,
-    '2026 Vote Plan': votePlanLayer
+    '2026 Vote Plan': votePlanLayer,
+    'Votes Cast': votesCastLayer
   };
 
   L.control.layers(overlays, null, {
@@ -270,7 +280,7 @@ function getLegendHtml(layerKey) {
 
 // Update legend when layer changes
 map.on('baselayerchange', function(e) {
-  const key = e.name === '2026 Vote Plan' ? 'voteplan' : 'edhermes';
+  const key = e.name === '2026 Vote Plan' ? 'voteplan' : e.name === 'Votes Cast' ? 'votescast' : 'edhermes';
   document.getElementById('legend-content').innerHTML = getLegendHtml(key);
 });
 </script>
