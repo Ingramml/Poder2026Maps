@@ -66,54 +66,57 @@ map2.on('move', function() { map1.setView(map2.getCenter(), map2.getZoom(), {ani
 // --- OPTION 1: SVG Gradient Patterns ---
 let patternCounter = 0;
 
-function createSVGPattern(proportions) {
-  const id = 'pat-' + (patternCounter++);
-  let svg = document.getElementById('svg-patterns');
-  if (!svg) {
-    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('id', 'svg-patterns');
-    svg.style.position = 'absolute';
-    svg.style.width = '0';
-    svg.style.height = '0';
-    document.body.appendChild(svg);
-    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    svg.appendChild(defs);
+function ensureDefs(map) {
+  const svg = map.getRenderer(L.geoJSON())._container || map.getPane('overlayPane').querySelector('svg');
+  if (!svg) return null;
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    svg.insertBefore(defs, svg.firstChild);
   }
-  const defs = svg.querySelector('defs');
+  return defs;
+}
+
+function createSVGPattern(defs, proportions) {
+  const id = 'pat-' + (patternCounter++);
+  const size = 40;
 
   const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
   pattern.setAttribute('id', id);
-  pattern.setAttribute('patternUnits', 'objectBoundingBox');
-  pattern.setAttribute('width', '1');
-  pattern.setAttribute('height', '1');
+  pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+  pattern.setAttribute('width', size);
+  pattern.setAttribute('height', size);
   pattern.setAttribute('patternTransform', 'rotate(45)');
 
-  // Create rectangles for each proportion
-  let cumulative = 0;
+  let cumY = 0;
   proportions.forEach(({color, pct}) => {
     if (pct <= 0) return;
+    const h = pct / 100 * size;
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', '0');
-    rect.setAttribute('y', cumulative.toString());
-    rect.setAttribute('width', '2');
-    rect.setAttribute('height', (pct / 100 * 2).toString());
+    rect.setAttribute('y', cumY.toString());
+    rect.setAttribute('width', size.toString());
+    rect.setAttribute('height', h.toString());
     rect.setAttribute('fill', color);
     pattern.appendChild(rect);
-    cumulative += pct / 100 * 2;
+    cumY += h;
   });
 
   defs.appendChild(pattern);
-  return `url(#${id})`;
+  return id;
 }
 
 function buildOption1(geojsonData, map) {
-  L.geoJSON(geojsonData, {
+  // Use SVG renderer explicitly
+  const renderer = L.svg();
+  const geoLayer = L.geoJSON(geojsonData, {
+    renderer: renderer,
     style: function(feature) {
       const p = feature.properties;
       if (p.total_responses === 0) {
         return { fillOpacity: 0, color: '#aaa', weight: 0.5 };
       }
-      return { color: '#333', weight: 1, fillOpacity: 0.85 };
+      return { color: '#333', weight: 1, fillColor: '#999', fillOpacity: 0.85 };
     },
     onEachFeature: function(feature, layer) {
       const p = feature.properties;
@@ -127,15 +130,7 @@ function buildOption1(geojsonData, map) {
         }
       });
 
-      // Apply SVG pattern after layer is added to map
-      layer.on('add', function() {
-        const patternUrl = createSVGPattern(proportions);
-        const el = layer.getElement();
-        if (el) {
-          el.style.fill = patternUrl;
-          el.style.fillOpacity = '0.85';
-        }
-      });
+      layer._proportions = proportions;
 
       layer.on('mouseover', function(e) {
         let tip = `<strong>${p.Precinct_Cap}</strong><br>${p.total_responses} responses`;
@@ -145,14 +140,46 @@ function buildOption1(geojsonData, map) {
         });
         layer.bindTooltip(tip, { sticky: true, className: 'info-tooltip' }).openTooltip(e.latlng);
         layer.setStyle({ weight: 2.5, color: '#000' });
+        // Re-apply pattern fill after setStyle
+        const el = layer.getElement();
+        if (el && el._patternId) {
+          el.setAttribute('fill', 'url(#' + el._patternId + ')');
+          el.setAttribute('fill-opacity', '0.85');
+        }
       });
       layer.on('mouseout', function() {
         layer.closeTooltip();
         layer.unbindTooltip();
         layer.setStyle({ weight: 1, color: '#333' });
+        const el = layer.getElement();
+        if (el && el._patternId) {
+          el.setAttribute('fill', 'url(#' + el._patternId + ')');
+          el.setAttribute('fill-opacity', '0.85');
+        }
       });
     }
   }).addTo(map);
+
+  // After layer is on the map, inject patterns into the SVG
+  setTimeout(function() {
+    const svgEl = renderer._container;
+    let defs = svgEl.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svgEl.insertBefore(defs, svgEl.firstChild);
+    }
+
+    geoLayer.eachLayer(function(layer) {
+      if (!layer._proportions) return;
+      const patId = createSVGPattern(defs, layer._proportions);
+      const el = layer.getElement();
+      if (el) {
+        el.setAttribute('fill', 'url(#' + patId + ')');
+        el.setAttribute('fill-opacity', '0.85');
+        el._patternId = patId;
+      }
+    });
+  }, 100);
 }
 
 // --- OPTION 2: Stacked Clipped Polygons ---
