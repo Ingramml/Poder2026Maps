@@ -43,7 +43,7 @@
 <body>
 <div class="container">
   <div class="map-wrap">
-    <div class="label">Option 1: SVG Diagonal Pattern</div>
+    <div class="label">Option 1: Diagonal Gradient</div>
     <div id="map1"></div>
   </div>
   <div class="map-wrap">
@@ -81,37 +81,38 @@ map2.on('move', function() {
   syncing = false;
 });
 
-// --- OPTION 1: SVG Gradient Patterns ---
-let patternCounter = 0;
+// --- OPTION 1: SVG Diagonal Gradient (hard color stops, no tiling) ---
+let gradCounter = 0;
 
-function createSVGPattern(defs, proportions) {
-  const id = 'pat-' + (patternCounter++);
+function createDiagonalGradient(defs, proportions) {
+  const id = 'grad-' + (gradCounter++);
 
-  const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
-  pattern.setAttribute('id', id);
-  pattern.setAttribute('patternUnits', 'objectBoundingBox');
-  pattern.setAttribute('width', '1');
-  pattern.setAttribute('height', '1');
-  pattern.setAttribute('patternTransform', 'rotate(45 0.5 0.5)');
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  grad.setAttribute('id', id);
+  grad.setAttribute('x1', '0');
+  grad.setAttribute('y1', '0');
+  grad.setAttribute('x2', '1');
+  grad.setAttribute('y2', '1');
 
-  // Use a viewBox so we can work in 0-100 coordinates
-  pattern.setAttribute('viewBox', '0 0 100 100');
-  pattern.setAttribute('preserveAspectRatio', 'none');
-
-  let cumY = 0;
+  let cumPct = 0;
   proportions.forEach(({color, pct}) => {
     if (pct <= 0) return;
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', '0');
-    rect.setAttribute('y', cumY.toFixed(2));
-    rect.setAttribute('width', '100');
-    rect.setAttribute('height', (pct + 0.5).toFixed(2));
-    rect.setAttribute('fill', color);
-    pattern.appendChild(rect);
-    cumY += pct;
+    // Hard stop: start of this color
+    const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop1.setAttribute('offset', cumPct.toFixed(2) + '%');
+    stop1.setAttribute('stop-color', color);
+    grad.appendChild(stop1);
+
+    cumPct += pct;
+
+    // Hard stop: end of this color
+    const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop2.setAttribute('offset', cumPct.toFixed(2) + '%');
+    stop2.setAttribute('stop-color', color);
+    grad.appendChild(stop2);
   });
 
-  defs.appendChild(pattern);
+  defs.appendChild(grad);
   return id;
 }
 
@@ -149,8 +150,8 @@ function buildOption1(geojsonData, map) {
         layer.bindTooltip(tip, { sticky: true, className: 'info-tooltip' }).openTooltip(e.latlng);
         layer.setStyle({ weight: 2.5, color: '#000' });
         const el = layer.getElement();
-        if (el && el._patternId) {
-          el.setAttribute('fill', 'url(#' + el._patternId + ')');
+        if (el && el._gradId) {
+          el.setAttribute('fill', 'url(#' + el._gradId + ')');
           el.setAttribute('fill-opacity', '0.85');
         }
       });
@@ -159,16 +160,15 @@ function buildOption1(geojsonData, map) {
         layer.unbindTooltip();
         layer.setStyle({ weight: 1, color: '#333' });
         const el = layer.getElement();
-        if (el && el._patternId) {
-          el.setAttribute('fill', 'url(#' + el._patternId + ')');
+        if (el && el._gradId) {
+          el.setAttribute('fill', 'url(#' + el._gradId + ')');
           el.setAttribute('fill-opacity', '0.85');
         }
       });
     }
   }).addTo(map);
 
-  // Inject patterns into SVG after render
-  function applyPatterns() {
+  function applyGradients() {
     const svgEl = renderer._container;
     if (!svgEl) return;
     let defs = svgEl.querySelector('defs');
@@ -181,20 +181,17 @@ function buildOption1(geojsonData, map) {
       if (!layer._proportions) return;
       const el = layer.getElement();
       if (!el) return;
-      // Only create pattern once
-      if (!el._patternId) {
-        const patId = createSVGPattern(defs, layer._proportions);
-        el._patternId = patId;
+      if (!el._gradId) {
+        el._gradId = createDiagonalGradient(defs, layer._proportions);
       }
-      el.setAttribute('fill', 'url(#' + el._patternId + ')');
+      el.setAttribute('fill', 'url(#' + el._gradId + ')');
       el.setAttribute('fill-opacity', '0.85');
     });
   }
 
-  setTimeout(applyPatterns, 100);
-  // Re-apply after zoom (Leaflet redraws SVG paths)
+  setTimeout(applyGradients, 100);
   map.on('zoomend moveend', function() {
-    setTimeout(applyPatterns, 50);
+    setTimeout(applyGradients, 50);
   });
 }
 
