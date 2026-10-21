@@ -38,6 +38,31 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-family: system-ui;
     font-size: 18px; font-weight: bold; color: #333;
   }
+  .search-control {
+    background: white; padding: 6px; border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2); font-family: system-ui;
+  }
+  .search-control input {
+    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+    font-size: 12px; width: 160px; outline: none;
+  }
+  .search-control input:focus { border-color: #666; }
+  .search-results {
+    max-height: 150px; overflow-y: auto; margin-top: 4px;
+  }
+  .search-results div {
+    padding: 3px 8px; font-size: 12px; cursor: pointer; border-radius: 3px;
+  }
+  .search-results div:hover { background: #eee; }
+  .stats-panel {
+    background: white; padding: 10px 14px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-family: system-ui;
+    font-size: 12px; min-width: 180px;
+  }
+  .stats-panel h4 { font-size: 13px; margin-bottom: 6px; }
+  .stats-panel .stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .stats-panel .stat-label { color: #666; }
+  .stats-panel .stat-value { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -85,8 +110,13 @@ function getFillColor(total) {
   return color;
 }
 
+// Track all precinct layers for search
+let allPrecinctLayers = [];
+
 function buildLayer(geojsonData, config) {
   const group = L.layerGroup();
+  const isVotesCast = config.name === 'Votes Cast';
+  const unit = isVotesCast ? 'votes' : 'responses';
 
   const polygonLayer = L.geoJSON(geojsonData, {
     style: function(feature) {
@@ -101,7 +131,6 @@ function buildLayer(geojsonData, config) {
     onEachFeature: function(feature, layer) {
       const p = feature.properties;
 
-      const unit = config.name === 'Votes Cast' ? 'votes' : 'responses';
       layer.on('mouseover', function(e) {
         let tip = `<strong>${p.Precinct_Cap}</strong>`;
         if (p.total_responses > 0) tip += `<br>${p.total_responses} ${unit}`;
@@ -116,62 +145,79 @@ function buildLayer(geojsonData, config) {
 
       if (p.total_responses > 0) {
         layer.on('click', function(e) {
-          const canvasId = 'pie-' + config.name.replace(/\s/g,'') + '-' + p.Precinct_Cap;
-          const values = config.categories.map(c => p[c] || 0);
+          if (isVotesCast) {
+            // Simple popup for Votes Cast — no pie chart
+            const html = `
+              <div class="pie-popup">
+                <h3>${p.Precinct_Cap}</h3>
+                <div class="subtitle">${config.name}</div>
+                <div class="total" style="font-size:24px;font-weight:bold;color:#1B5E20;margin:12px 0">${p.votes_cast}</div>
+                <div style="font-size:12px;color:#666">votes cast</div>
+              </div>
+            `;
+            L.popup({ maxWidth: 200 })
+              .setLatLng(e.latlng)
+              .setContent(html)
+              .openOn(map);
+          } else {
+            // Pie chart popup for survey layers
+            const canvasId = 'pie-' + config.name.replace(/\s/g,'') + '-' + p.Precinct_Cap + '-' + Date.now();
+            const values = config.categories.map(c => p[c] || 0);
 
-          let breakdownHtml = '';
-          config.categories.forEach((c, i) => {
-            if (values[i] > 0) {
-              const pct = Math.round(values[i] / p.total_responses * 100);
-              breakdownHtml += `<div><span class="dot" style="background:${config.colors[i]}"></span>${config.labels[i]}: ${values[i]} (${pct}%)</div>`;
-            }
-          });
+            let breakdownHtml = '';
+            config.categories.forEach((c, i) => {
+              if (values[i] > 0) {
+                const pct = Math.round(values[i] / p.total_responses * 100);
+                breakdownHtml += `<div><span class="dot" style="background:${config.colors[i]}"></span>${config.labels[i]}: ${values[i]} (${pct}%)</div>`;
+              }
+            });
 
-          const html = `
-            <div class="pie-popup">
-              <h3>${p.Precinct_Cap}</h3>
-              <div class="subtitle">${config.name}</div>
-              <div class="total">${p.total_responses} total ${unit}</div>
-              <canvas id="${canvasId}" width="160" height="160"></canvas>
-              <div class="breakdown">${breakdownHtml}</div>
-            </div>
-          `;
+            const html = `
+              <div class="pie-popup">
+                <h3>${p.Precinct_Cap}</h3>
+                <div class="subtitle">${config.name}</div>
+                <div class="total">${p.total_responses} total ${unit}</div>
+                <canvas id="${canvasId}" width="160" height="160"></canvas>
+                <div class="breakdown">${breakdownHtml}</div>
+              </div>
+            `;
 
-          L.popup({ maxWidth: 260 })
-            .setLatLng(e.latlng)
-            .setContent(html)
-            .openOn(map);
+            L.popup({ maxWidth: 260 })
+              .setLatLng(e.latlng)
+              .setContent(html)
+              .openOn(map);
 
-          setTimeout(() => {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
-            new Chart(canvas, {
-              type: 'pie',
-              data: {
-                labels: config.labels,
-                datasets: [{
-                  data: values,
-                  backgroundColor: config.colors,
-                  borderWidth: 1,
-                  borderColor: '#fff'
-                }]
-              },
-              options: {
-                responsive: false,
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    callbacks: {
-                      label: function(ctx) {
-                        const pct = Math.round(ctx.raw / p.total_responses * 100);
-                        return `${ctx.label}: ${ctx.raw} (${pct}%)`;
+            setTimeout(() => {
+              const canvas = document.getElementById(canvasId);
+              if (!canvas) return;
+              new Chart(canvas, {
+                type: 'pie',
+                data: {
+                  labels: config.labels,
+                  datasets: [{
+                    data: values,
+                    backgroundColor: config.colors,
+                    borderWidth: 1,
+                    borderColor: '#fff'
+                  }]
+                },
+                options: {
+                  responsive: false,
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          const pct = Math.round(ctx.raw / p.total_responses * 100);
+                          return `${ctx.label}: ${ctx.raw} (${pct}%)`;
+                        }
                       }
                     }
                   }
                 }
-              }
-            });
-          }, 50);
+              });
+            }, 50);
+          }
         });
       }
     }
@@ -179,16 +225,17 @@ function buildLayer(geojsonData, config) {
 
   polygonLayer.addTo(group);
 
-  // Labels
+  // Labels with background for readability
   polygonLayer.eachLayer(function(layer) {
     const center = layer.getBounds().getCenter();
     const name = layer.feature.properties.Precinct_Cap;
+    allPrecinctLayers.push({ name: name, center: center, bounds: layer.getBounds() });
     L.marker(center, {
       icon: L.divIcon({
         className: 'precinct-label',
-        html: `<div style="font-size:9px;font-family:system-ui;color:#333;
-                text-shadow:1px 1px 2px white,-1px -1px 2px white,1px -1px 2px white,-1px 1px 2px white;
-                white-space:nowrap;pointer-events:none;font-weight:500;text-align:center;
+        html: `<div style="font-size:9px;font-family:system-ui;color:#222;
+                background:rgba(255,255,255,0.7);padding:1px 3px;border-radius:2px;
+                white-space:nowrap;pointer-events:none;font-weight:600;text-align:center;
                 transform:translate(-50%,-50%)">${name}</div>`,
         iconSize: [0, 0]
       }),
@@ -227,18 +274,109 @@ Promise.all([
 
   // Add Ed Hermes as default
   edHermesLayer.addTo(map);
+  let activeKey = 'edhermes';
 
-  // Layer control
-  const overlays = {
+  // Layer control — exclusive radio buttons (base layers)
+  const baseLayers = {
     'Ed Hermes Support': edHermesLayer,
     '2026 Vote Plan': votePlanLayer,
     'Votes Cast': votesCastLayer
   };
 
-  L.control.layers(overlays, null, {
+  L.control.layers(baseLayers, null, {
     collapsed: false,
     position: 'topright'
   }).addTo(map);
+
+  // Update legend when layer changes
+  map.on('baselayerchange', function(e) {
+    activeKey = e.name === '2026 Vote Plan' ? 'voteplan' : e.name === 'Votes Cast' ? 'votescast' : 'edhermes';
+    document.getElementById('legend-content').innerHTML = getLegendHtml(activeKey);
+    updateStats(activeKey, precincts, voteplan, votescast);
+  });
+
+  // Summary stats
+  function calcStats(layerKey, precinctsData, voteplanData, votescastData) {
+    let data, cats, labels;
+    if (layerKey === 'edhermes') {
+      data = precinctsData.features;
+      cats = LAYER_CONFIG.edhermes.categories;
+      labels = LAYER_CONFIG.edhermes.labels;
+    } else if (layerKey === 'voteplan') {
+      data = voteplanData.features;
+      cats = LAYER_CONFIG.voteplan.categories;
+      labels = LAYER_CONFIG.voteplan.labels;
+    } else {
+      data = votescastData.features;
+      cats = LAYER_CONFIG.votescast.categories;
+      labels = LAYER_CONFIG.votescast.labels;
+    }
+
+    const totalResponses = data.reduce((s, f) => s + (f.properties.total_responses || 0), 0);
+    const activePrecincts = data.filter(f => f.properties.total_responses > 0).length;
+    const topPrecincts = data
+      .filter(f => f.properties.total_responses > 0)
+      .sort((a, b) => b.properties.total_responses - a.properties.total_responses)
+      .slice(0, 3);
+
+    const catTotals = cats.map((c, i) => ({
+      label: labels[i],
+      total: data.reduce((s, f) => s + (f.properties[c] || 0), 0)
+    }));
+
+    return { totalResponses, activePrecincts, topPrecincts, catTotals, isVotes: layerKey === 'votescast' };
+  }
+
+  function updateStats(layerKey, precinctsData, voteplanData, votescastData) {
+    const s = calcStats(layerKey, precinctsData, voteplanData, votescastData);
+    const unit = s.isVotes ? 'votes' : 'responses';
+    let html = `<h4>Summary</h4>`;
+    html += `<div class="stat-row"><span class="stat-label">Total ${unit}:</span><span class="stat-value">${s.totalResponses.toLocaleString()}</span></div>`;
+    html += `<div class="stat-row"><span class="stat-label">Active precincts:</span><span class="stat-value">${s.activePrecincts}</span></div>`;
+    html += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
+    if (!s.isVotes) {
+      html += '<div style="font-weight:600;margin-bottom:4px">Breakdown</div>';
+      s.catTotals.forEach(ct => {
+        if (ct.total > 0) {
+          const pct = Math.round(ct.total / s.totalResponses * 100);
+          html += `<div class="stat-row"><span class="stat-label">${ct.label}:</span><span class="stat-value">${ct.total} (${pct}%)</span></div>`;
+        }
+      });
+      html += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
+    }
+    html += '<div style="font-weight:600;margin-bottom:4px">Top Precincts</div>';
+    s.topPrecincts.forEach(f => {
+      html += `<div class="stat-row"><span class="stat-label">${f.properties.Precinct_Cap}:</span><span class="stat-value">${f.properties.total_responses}</span></div>`;
+    });
+    document.getElementById('stats-content').innerHTML = html;
+  }
+
+  // Initial stats
+  updateStats('edhermes', precincts, voteplan, votescast);
+
+  // Search
+  const searchInput = document.getElementById('precinct-search');
+  const searchResults = document.getElementById('search-results');
+  searchInput.addEventListener('input', function() {
+    const q = this.value.toUpperCase().trim();
+    searchResults.innerHTML = '';
+    if (q.length < 2) return;
+    const unique = [...new Set(allPrecinctLayers.map(p => p.name))];
+    const matches = unique.filter(n => n.includes(q)).slice(0, 8);
+    matches.forEach(name => {
+      const div = document.createElement('div');
+      div.textContent = name;
+      div.onclick = function() {
+        const p = allPrecinctLayers.find(l => l.name === name);
+        if (p) {
+          map.fitBounds(p.bounds.pad(0.3));
+        }
+        searchInput.value = name;
+        searchResults.innerHTML = '';
+      };
+      searchResults.appendChild(div);
+    });
+  });
 
   // Fit to CD4
   map.fitBounds(L.geoJSON(cd4).getBounds().pad(0.05));
@@ -253,6 +391,17 @@ titleControl.onAdd = function() {
 };
 titleControl.addTo(map);
 
+// Search control
+const searchControl = L.control({ position: 'topleft' });
+searchControl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'search-control');
+  div.innerHTML = '<input id="precinct-search" type="text" placeholder="Search precincts...">' +
+    '<div id="search-results" class="search-results"></div>';
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+};
+searchControl.addTo(map);
+
 // Legend
 const legendControl = L.control({ position: 'bottomright' });
 legendControl.onAdd = function() {
@@ -263,27 +412,33 @@ legendControl.onAdd = function() {
 };
 legendControl.addTo(map);
 
+// Stats panel
+const statsControl = L.control({ position: 'bottomleft' });
+statsControl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'stats-panel');
+  div.id = 'stats-content';
+  div.innerHTML = '<h4>Summary</h4><div>Loading...</div>';
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+};
+statsControl.addTo(map);
+
 function getLegendHtml(layerKey) {
   const config = LAYER_CONFIG[layerKey];
+  const unit = layerKey === 'votescast' ? 'Vote' : 'Response';
   let html = `<h4>${config.name}</h4>`;
   config.labels.forEach((label, i) => {
     html += `<div class="legend-item"><span class="legend-color" style="background:${config.colors[i]}"></span>${label}</div>`;
   });
   html += '<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">';
-  html += '<h4>Response Count</h4>';
+  html += `<h4>${unit} Count</h4>`;
   html += '<div class="legend-item"><span class="legend-color" style="background:rgba(198,219,239,0.6)"></span>1-10</div>';
   html += '<div class="legend-item"><span class="legend-color" style="background:rgba(158,202,225,0.6)"></span>11-30</div>';
   html += '<div class="legend-item"><span class="legend-color" style="background:rgba(107,174,214,0.6)"></span>31-60</div>';
   html += '<div class="legend-item"><span class="legend-color" style="background:rgba(49,130,189,0.6)"></span>61-100</div>';
-  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(8,81,156,0.6)"></span>101-200</div>';
+  html += '<div class="legend-item"><span class="legend-color" style="background:rgba(8,81,156,0.6)"></span>101+</div>';
   return html;
 }
-
-// Update legend when layer changes
-map.on('baselayerchange', function(e) {
-  const key = e.name === '2026 Vote Plan' ? 'voteplan' : e.name === 'Votes Cast' ? 'votescast' : 'edhermes';
-  document.getElementById('legend-content').innerHTML = getLegendHtml(key);
-});
 </script>
 </body>
 </html>

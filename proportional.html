@@ -31,12 +31,19 @@
   }
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .legend-color { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #999; }
+  /* Mobile: stack vertically */
+  @media (max-width: 768px) {
+    .container { flex-direction: column; }
+    .map-wrap { border-right: none; border-bottom: 2px solid #333; }
+    .map-wrap:last-child { border-bottom: none; }
+    .map-wrap .label { font-size: 12px; padding: 6px 12px; }
+  }
 </style>
 </head>
 <body>
 <div class="container">
   <div class="map-wrap">
-    <div class="label">Option 1: SVG Gradient Pattern</div>
+    <div class="label">Option 1: SVG Diagonal Pattern</div>
     <div id="map1"></div>
   </div>
   <div class="map-wrap">
@@ -59,27 +66,27 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OSM', maxZoom: 19
 }).addTo(map2);
 
-// Sync maps
-map1.on('move', function() { map2.setView(map1.getCenter(), map1.getZoom(), {animate: false}); });
-map2.on('move', function() { map1.setView(map2.getCenter(), map2.getZoom(), {animate: false}); });
+// Sync maps (with guard to prevent recursive firing)
+let syncing = false;
+map1.on('move', function() {
+  if (syncing) return;
+  syncing = true;
+  map2.setView(map1.getCenter(), map1.getZoom(), {animate: false});
+  syncing = false;
+});
+map2.on('move', function() {
+  if (syncing) return;
+  syncing = true;
+  map1.setView(map2.getCenter(), map2.getZoom(), {animate: false});
+  syncing = false;
+});
 
 // --- OPTION 1: SVG Gradient Patterns ---
 let patternCounter = 0;
 
-function ensureDefs(map) {
-  const svg = map.getRenderer(L.geoJSON())._container || map.getPane('overlayPane').querySelector('svg');
-  if (!svg) return null;
-  let defs = svg.querySelector('defs');
-  if (!defs) {
-    defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    svg.insertBefore(defs, svg.firstChild);
-  }
-  return defs;
-}
-
 function createSVGPattern(defs, proportions) {
   const id = 'pat-' + (patternCounter++);
-  const size = 40;
+  const size = 200;
 
   const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
   pattern.setAttribute('id', id);
@@ -94,9 +101,9 @@ function createSVGPattern(defs, proportions) {
     const h = pct / 100 * size;
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', '0');
-    rect.setAttribute('y', cumY.toString());
+    rect.setAttribute('y', Math.floor(cumY).toString());
     rect.setAttribute('width', size.toString());
-    rect.setAttribute('height', h.toString());
+    rect.setAttribute('height', Math.ceil(h + 1).toString());
     rect.setAttribute('fill', color);
     pattern.appendChild(rect);
     cumY += h;
@@ -107,7 +114,6 @@ function createSVGPattern(defs, proportions) {
 }
 
 function buildOption1(geojsonData, map) {
-  // Use SVG renderer explicitly
   const renderer = L.svg();
   const geoLayer = L.geoJSON(geojsonData, {
     renderer: renderer,
@@ -140,7 +146,6 @@ function buildOption1(geojsonData, map) {
         });
         layer.bindTooltip(tip, { sticky: true, className: 'info-tooltip' }).openTooltip(e.latlng);
         layer.setStyle({ weight: 2.5, color: '#000' });
-        // Re-apply pattern fill after setStyle
         const el = layer.getElement();
         if (el && el._patternId) {
           el.setAttribute('fill', 'url(#' + el._patternId + ')');
@@ -160,9 +165,10 @@ function buildOption1(geojsonData, map) {
     }
   }).addTo(map);
 
-  // After layer is on the map, inject patterns into the SVG
-  setTimeout(function() {
+  // Inject patterns into SVG after render
+  function applyPatterns() {
     const svgEl = renderer._container;
+    if (!svgEl) return;
     let defs = svgEl.querySelector('defs');
     if (!defs) {
       defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -171,18 +177,26 @@ function buildOption1(geojsonData, map) {
 
     geoLayer.eachLayer(function(layer) {
       if (!layer._proportions) return;
-      const patId = createSVGPattern(defs, layer._proportions);
       const el = layer.getElement();
-      if (el) {
-        el.setAttribute('fill', 'url(#' + patId + ')');
-        el.setAttribute('fill-opacity', '0.85');
+      if (!el) return;
+      // Only create pattern once
+      if (!el._patternId) {
+        const patId = createSVGPattern(defs, layer._proportions);
         el._patternId = patId;
       }
+      el.setAttribute('fill', 'url(#' + el._patternId + ')');
+      el.setAttribute('fill-opacity', '0.85');
     });
-  }, 100);
+  }
+
+  setTimeout(applyPatterns, 100);
+  // Re-apply after zoom (Leaflet redraws SVG paths)
+  map.on('zoomend moveend', function() {
+    setTimeout(applyPatterns, 50);
+  });
 }
 
-// --- OPTION 2: Stacked Clipped Polygons (90° vertical divisions) ---
+// --- OPTION 2: Vertical Split Polygons (90°) ---
 function buildOption2(geojsonData, map) {
   const group = L.layerGroup().addTo(map);
 
@@ -195,7 +209,6 @@ function buildOption2(geojsonData, map) {
       return;
     }
 
-    // Calculate proportions
     const slices = [];
     CATEGORIES.forEach((cat, i) => {
       const val = p[cat] || 0;
@@ -205,7 +218,7 @@ function buildOption2(geojsonData, map) {
     });
 
     let cumPct = 0;
-    slices.forEach(function(slice, idx) {
+    slices.forEach(function(slice) {
       const startPct = cumPct;
       cumPct += slice.pct;
       const endPct = cumPct;
@@ -224,16 +237,14 @@ function buildOption2(geojsonData, map) {
         lyr.on('add', function() {
           const el = lyr.getElement();
           if (!el) return;
-          // Simple vertical clip: left% to right% of bounding box
-          const clipPath = `inset(0% ${100 - endPct}% 0% ${startPct}%)`;
-          el.style.clipPath = clipPath;
+          el.style.clipPath = `inset(0% ${(100 - endPct).toFixed(2)}% 0% ${startPct.toFixed(2)}%)`;
         });
       });
 
       polyLayer.addTo(group);
     });
 
-    // Add outline and interaction on top
+    // Outline + interaction
     L.geoJSON(feature, {
       style: { fill: false, color: '#333', weight: 1 },
       onEachFeature: function(feat, layer) {
@@ -255,7 +266,7 @@ function buildOption2(geojsonData, map) {
   });
 }
 
-// Add legends
+// Legends
 function addLegend(map) {
   const legend = L.control({ position: 'bottomright' });
   legend.onAdd = function() {
@@ -275,7 +286,6 @@ Promise.all([
   fetch('precincts.geojson' + cb).then(r => r.json()),
   fetch('cd4.geojson' + cb).then(r => r.json())
 ]).then(([precincts, cd4]) => {
-  // CD4 boundary on both maps
   L.geoJSON(cd4, { style: { color: '#FF4500', weight: 2.5, fill: false, dashArray: '8,4' } }).addTo(map1);
   L.geoJSON(cd4, { style: { color: '#FF4500', weight: 2.5, fill: false, dashArray: '8,4' } }).addTo(map2);
 
