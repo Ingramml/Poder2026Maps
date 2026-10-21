@@ -198,11 +198,12 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
-// Load all data
+// Load all data (cache-bust with timestamp)
+const cb = '?v=' + Date.now();
 Promise.all([
-  fetch('precincts.geojson').then(r => r.json()),
-  fetch('voteplan.geojson').then(r => r.json()),
-  fetch('cd4.geojson').then(r => r.json())
+  fetch('precincts.geojson' + cb).then(r => r.json()),
+  fetch('voteplan.geojson' + cb).then(r => r.json()),
+  fetch('cd4.geojson' + cb).then(r => r.json())
 ]).then(([precincts, voteplan, cd4]) => {
 
   // CD4 boundary (always visible)
