@@ -101,9 +101,10 @@ function buildLayer(geojsonData, config) {
     onEachFeature: function(feature, layer) {
       const p = feature.properties;
 
+      const unit = config.name === 'Votes Cast' ? 'votes' : 'responses';
       layer.on('mouseover', function(e) {
         let tip = `<strong>${p.Precinct_Cap}</strong>`;
-        if (p.total_responses > 0) tip += `<br>${p.total_responses} responses`;
+        if (p.total_responses > 0) tip += `<br>${p.total_responses} ${unit}`;
         layer.bindTooltip(tip, { sticky: true, className: 'info-tooltip' }).openTooltip(e.latlng);
         layer.setStyle({ weight: 2.5, color: '#333' });
       });
@@ -130,7 +131,7 @@ function buildLayer(geojsonData, config) {
             <div class="pie-popup">
               <h3>${p.Precinct_Cap}</h3>
               <div class="subtitle">${config.name}</div>
-              <div class="total">${p.total_responses} total responses</div>
+              <div class="total">${p.total_responses} total ${unit}</div>
               <canvas id="${canvasId}" width="160" height="160"></canvas>
               <div class="breakdown">${breakdownHtml}</div>
             </div>
