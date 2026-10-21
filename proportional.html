@@ -40,7 +40,7 @@
     <div id="map1"></div>
   </div>
   <div class="map-wrap">
-    <div class="label">Option 2: Stacked Clipped Polygons</div>
+    <div class="label">Option 2: Vertical Split Polygons</div>
     <div id="map2"></div>
   </div>
 </div>
@@ -182,7 +182,7 @@ function buildOption1(geojsonData, map) {
   }, 100);
 }
 
-// --- OPTION 2: Stacked Clipped Polygons ---
+// --- OPTION 2: Stacked Clipped Polygons (90° vertical divisions) ---
 function buildOption2(geojsonData, map) {
   const group = L.layerGroup().addTo(map);
 
@@ -204,149 +204,36 @@ function buildOption2(geojsonData, map) {
       }
     });
 
-    // Get bounding box for clip calculations
-    const coords = feature.geometry.type === 'MultiPolygon'
-      ? feature.geometry.coordinates[0][0]
-      : feature.geometry.coordinates[0];
-    const lats = coords.map(c => c[1]);
-    const lons = coords.map(c => c[0]);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-    const dLat = maxLat - minLat;
-    const dLon = maxLon - minLon;
-    // Diagonal length for 45° sweep
-    const diagLen = dLat + dLon;
-
     let cumPct = 0;
     slices.forEach(function(slice, idx) {
-      const startFrac = cumPct / 100;
+      const startPct = cumPct;
       cumPct += slice.pct;
-      const endFrac = cumPct / 100;
+      const endPct = cumPct;
 
-      // Create a clip polygon: 45° band across the bounding box
-      // The band sweeps from bottom-left to top-right
-      const pad = 0.01; // padding
-      const s0 = startFrac * diagLen;
-      const s1 = endFrac * diagLen;
-
-      // Build clip polygon as intersection with the 45° band
-      // Band defined by: (lon - minLon) + (maxLat - lat) >= s0*diagLen
-      //                   (lon - minLon) + (maxLat - lat) <= s1*diagLen
-      // We create a large polygon for the band and rely on Leaflet to clip visually
-
-      const clipCoords = [];
-      const steps = 50;
-
-      // Bottom edge of band (s0 line)
-      // Top edge of band (s1 line)
-      // 45° line: lon = minLon + s - (maxLat - lat), i.e. for each lat, lon at the cut
-
-      // Create band polygon
-      const bigPad = Math.max(dLat, dLon) * 2;
-
-      // s0 line points (going right)
-      const s0_bl_lon = minLon - pad + s0 - 0;
-      const s0_bl_lat = maxLat + pad;
-      const s0_tr_lon = minLon - pad + s0 + bigPad;
-      const s0_tr_lat = maxLat + pad - bigPad;
-
-      // s1 line points (going right)
-      const s1_bl_lon = minLon - pad + s1 - 0;
-      const s1_bl_lat = maxLat + pad;
-      const s1_tr_lon = minLon - pad + s1 + bigPad;
-      const s1_tr_lat = maxLat + pad - bigPad;
-
-      // Band polygon (between s0 and s1 lines)
-      const bandPoly = [
-        [s0_bl_lat, s0_bl_lon],
-        [s0_tr_lat, s0_tr_lon],
-        [s1_tr_lat, s1_tr_lon],
-        [s1_bl_lat, s1_bl_lon]
-      ];
-
-      // Use turf-like intersection: create the polygon layer with the band as a mask
-      // Actually, we'll use a simpler approach: multiple polygon copies with CSS clip-path
-
-      // For each slice, add the full precinct polygon with the slice color
       const polyLayer = L.geoJSON(feature, {
         style: {
           fillColor: slice.color,
           fillOpacity: 0.85,
-          color: idx === slices.length - 1 ? '#333' : 'transparent',
-          weight: idx === slices.length - 1 ? 1 : 0
+          color: 'transparent',
+          weight: 0
         },
-        interactive: idx === slices.length - 1 // only top layer interactive
+        interactive: false
       });
 
       polyLayer.eachLayer(function(lyr) {
         lyr.on('add', function() {
           const el = lyr.getElement();
           if (!el) return;
-
-          // Apply CSS clip-path using polygon()
-          // 45° diagonal clips: we use inset or polygon
-          // Map percentage to a diagonal sweep from top-left to bottom-right
-          // clip-path: polygon() with 45° angle cuts
-
-          const s = startFrac * 100;
-          const e = endFrac * 100;
-
-          // For 45° diagonal, we shift the clip by percentage
-          // Think of it as a parallelogram sweeping across
-          let clipPath;
-          if (idx === 0 && slices.length === 1) {
-            clipPath = 'none'; // full polygon
-          } else {
-            // Create diagonal clip
-            // The idea: at 0% we're at top-left corner, at 100% bottom-right
-            // Each cut line goes from (s%, 0) to (0, s%) effectively
-            const pts = [];
-
-            if (s <= 0) {
-              pts.push('0% 0%');
-            } else {
-              if (s <= 50) {
-                pts.push(`0% ${s * 2}%`);
-                pts.push(`${s * 2}% 0%`);
-              } else {
-                pts.push(`${(s - 50) * 2}% 100%`);
-                pts.push(`100% ${(s - 50) * 2}%`);
-              }
-            }
-
-            if (e >= 100) {
-              pts.push('100% 0%');
-              pts.push('100% 100%');
-              pts.push('0% 100%');
-            } else {
-              if (e <= 50) {
-                pts.push(`${e * 2}% 0%`);
-                pts.push('0% 0%');
-              } else {
-                pts.push('100% ' + ((e - 50) * 2) + '%');
-                pts.push('100% 100%');
-                pts.push(((e - 50) * 2) + '% 100%');
-              }
-            }
-
-            // Close back
-            if (s <= 0) {
-              // already at 0% 0%
-            }
-
-            clipPath = `polygon(${pts.join(', ')})`;
-          }
-
-          if (clipPath !== 'none') {
-            el.style.clipPath = clipPath;
-          }
+          // Simple vertical clip: left% to right% of bounding box
+          const clipPath = `inset(0% ${100 - endPct}% 0% ${startPct}%)`;
+          el.style.clipPath = clipPath;
         });
       });
 
       polyLayer.addTo(group);
     });
 
-    // Add outline on top
+    // Add outline and interaction on top
     L.geoJSON(feature, {
       style: { fill: false, color: '#333', weight: 1 },
       onEachFeature: function(feat, layer) {
