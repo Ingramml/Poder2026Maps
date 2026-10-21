@@ -86,27 +86,29 @@ let patternCounter = 0;
 
 function createSVGPattern(defs, proportions) {
   const id = 'pat-' + (patternCounter++);
-  const size = 200;
 
   const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
   pattern.setAttribute('id', id);
-  pattern.setAttribute('patternUnits', 'userSpaceOnUse');
-  pattern.setAttribute('width', size);
-  pattern.setAttribute('height', size);
-  pattern.setAttribute('patternTransform', 'rotate(45)');
+  pattern.setAttribute('patternUnits', 'objectBoundingBox');
+  pattern.setAttribute('width', '1');
+  pattern.setAttribute('height', '1');
+  pattern.setAttribute('patternTransform', 'rotate(45 0.5 0.5)');
+
+  // Use a viewBox so we can work in 0-100 coordinates
+  pattern.setAttribute('viewBox', '0 0 100 100');
+  pattern.setAttribute('preserveAspectRatio', 'none');
 
   let cumY = 0;
   proportions.forEach(({color, pct}) => {
     if (pct <= 0) return;
-    const h = pct / 100 * size;
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', '0');
-    rect.setAttribute('y', Math.floor(cumY).toString());
-    rect.setAttribute('width', size.toString());
-    rect.setAttribute('height', Math.ceil(h + 1).toString());
+    rect.setAttribute('y', cumY.toFixed(2));
+    rect.setAttribute('width', '100');
+    rect.setAttribute('height', (pct + 0.5).toFixed(2));
     rect.setAttribute('fill', color);
     pattern.appendChild(rect);
-    cumY += h;
+    cumY += pct;
   });
 
   defs.appendChild(pattern);
