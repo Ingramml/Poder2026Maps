@@ -89,10 +89,11 @@ function createDiagonalGradient(defs, proportions) {
 
   const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
   grad.setAttribute('id', id);
+  // 60° angle: x2=cos(60°)=0.5, y2=sin(60°)=0.866
   grad.setAttribute('x1', '0');
   grad.setAttribute('y1', '0');
-  grad.setAttribute('x2', '1');
-  grad.setAttribute('y2', '1');
+  grad.setAttribute('x2', '0.5');
+  grad.setAttribute('y2', '0.866');
 
   let cumPct = 0;
   proportions.forEach(({color, pct}) => {
