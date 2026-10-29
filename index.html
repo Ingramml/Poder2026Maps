@@ -80,9 +80,9 @@ const LAYER_CONFIG = {
   voteplan: {
     name: '2026 Vote Plan',
     file: 'voteplan.geojson',
-    categories: ['mailing_back','voting_in_person','not_voting','already_voted'],
-    colors: ['#B71C1C','#E57373','#4A0404','#FF8C00'],
-    labels: ['Mailing Back','Voting In Person','Not Voting','Already Voted']
+    categories: ['mailing_back','voting_in_person','not_voting','already_voted','drop_off_ballot'],
+    colors: ['#B71C1C','#E57373','#4A0404','#FF8C00','#1565C0'],
+    labels: ['Mailing Back','Voting In Person','Not Voting','Already Voted','Drop Off Ballot']
   },
   votescast: {
     name: 'Votes Cast',
@@ -386,7 +386,7 @@ Promise.all([
 const titleControl = L.control({ position: 'topleft' });
 titleControl.onAdd = function() {
   const div = L.DomUtil.create('div', 'map-title');
-  div.innerHTML = 'CD4 Survey Results<div style="font-size:12px;font-weight:normal;color:#666;margin-top:2px">Updated: Oct 28, 2026</div>';
+  div.innerHTML = 'CD4 Survey Results<div style="font-size:12px;font-weight:normal;color:#666;margin-top:2px">Updated: Oct 29, 2026</div>';
   return div;
 };
 titleControl.addTo(map);
