@@ -253,6 +253,11 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
+// Custom pane for CD4 boundary so it renders on top of all layers
+map.createPane('cd4Pane');
+map.getPane('cd4Pane').style.zIndex = 650;
+map.getPane('cd4Pane').style.pointerEvents = 'none';
+
 // Load all data (cache-bust with timestamp)
 const cb = '?v=' + Date.now();
 Promise.all([
@@ -262,9 +267,10 @@ Promise.all([
   fetch('votescast.geojson' + cb).then(r => r.json())
 ]).then(([precincts, voteplan, cd4, votescast]) => {
 
-  // CD4 boundary (always visible)
-  L.geoJSON(cd4, {
-    style: { color: '#FF4500', weight: 2.5, fill: false, dashArray: '8,4' }
+  // CD4 boundary (always visible, on top)
+  const cd4Layer = L.geoJSON(cd4, {
+    style: { color: '#FF4500', weight: 5, fill: false, dashArray: '8,4' },
+    pane: 'cd4Pane'
   }).addTo(map);
 
   // Build toggle layers
