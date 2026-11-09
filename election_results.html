@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phoenix Dist 4 - Election Results</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  #map { width: 100%; height: 100vh; }
+  .legend {
+    background: white; padding: 12px 16px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); line-height: 1.8; font-family: system-ui;
+    max-width: 220px;
+  }
+  .legend h4 { margin-bottom: 6px; font-size: 13px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .legend-color { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #999; flex-shrink: 0; }
+  .map-title {
+    background: white; padding: 10px 20px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-family: system-ui;
+    font-size: 16px; font-weight: bold; color: #333;
+  }
+  .map-title .subtitle { font-size: 11px; font-weight: normal; color: #888; }
+  .info-tooltip {
+    background: white; padding: 6px 10px; border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-family: system-ui; font-size: 12px;
+    border: none;
+  }
+  .results-popup { font-family: system-ui; min-width: 280px; }
+  .results-popup h3 { font-size: 15px; margin-bottom: 2px; color: #333; }
+  .results-popup .summary { font-size: 12px; color: #666; margin-bottom: 8px; }
+  .results-popup table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .results-popup th { text-align: left; padding: 4px 6px; border-bottom: 2px solid #333; font-size: 11px; color: #666; }
+  .results-popup td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+  .results-popup tr.winner td { font-weight: 600; background: #e8f5e9; }
+  .results-popup .bar-cell { width: 80px; }
+  .results-popup .bar { height: 12px; border-radius: 2px; }
+  .results-popup .pct { text-align: right; color: #555; }
+  .results-popup .votes { text-align: right; }
+  .nav-link {
+    background: white; padding: 8px 14px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); font-family: system-ui; font-size: 12px;
+  }
+  .nav-link a { color: #1565C0; text-decoration: none; }
+  .nav-link a:hover { text-decoration: underline; }
+  .search-control {
+    background: white; padding: 6px; border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2); font-family: system-ui;
+  }
+  .search-control input {
+    border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px;
+    font-size: 12px; width: 160px; outline: none;
+  }
+  .search-control input:focus { border-color: #666; }
+  .search-results { max-height: 150px; overflow-y: auto; margin-top: 4px; }
+  .search-results div { padding: 3px 8px; font-size: 12px; cursor: pointer; border-radius: 3px; }
+  .search-results div:hover { background: #eee; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+const MARGIN_COLORS = [
+  { min: -Infinity, max: 0,  color: '#d73027', label: 'Loss' },
+  { min: 0,  max: 5,  color: '#91bfdb', label: '0 - 5 pts' },
+  { min: 5,  max: 15, color: '#4393c3', label: '5 - 15 pts' },
+  { min: 15, max: 30, color: '#2166ac', label: '15 - 30 pts' },
+  { min: 30, max: Infinity, color: '#053061', label: '30+ pts' }
+];
+
+const CANDIDATE_COLORS = {
+  'HERMES, ED': '#2166ac',
+  'HARDER, ASHLEY': '#e6550d',
+  'JIMENEZ, PATRICIA': '#31a354',
+  'HERNANDEZ, CASSANDRA': '#756bb1',
+  'SCHMITZ, MEGAN': '#e7298a',
+  'MAZZOCCO, MICHAEL': '#66c2a5',
+  'LAUER, ZACHARY': '#fc8d62',
+  'OLIVIERI, ROBB': '#8da0cb',
+  'Write-in': '#999999'
+};
+
+function getMarginColor(margin) {
+  for (const c of MARGIN_COLORS) {
+    if (margin >= c.min && margin < c.max) return c.color;
+  }
+  return '#053061';
+}
+
+const map = L.map('map').setView([33.49, -112.09], 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+}).addTo(map);
+
+// Title
+const titleCtrl = L.control({ position: 'topleft' });
+titleCtrl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'map-title');
+  div.innerHTML = 'Phoenix Dist 4 - Councilmember<br><span class="subtitle">Nov 2026 Election Results | Pct Margin: Ed Hermes vs Runner-up</span>';
+  return div;
+};
+titleCtrl.addTo(map);
+
+// Nav link back to main map
+const navCtrl = L.control({ position: 'topleft' });
+navCtrl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'nav-link');
+  div.innerHTML = '<a href="index.html">&larr; Back to Survey Map</a>';
+  return div;
+};
+navCtrl.addTo(map);
+
+// Legend
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = function() {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML = '<h4>Ed Hermes Pct Margin</h4>';
+  for (const c of MARGIN_COLORS) {
+    div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+  return div;
+};
+legend.addTo(map);
+
+// Search
+const searchCtrl = L.control({ position: 'topright' });
+searchCtrl.onAdd = function() {
+  const div = L.DomUtil.create('div', 'search-control');
+  div.innerHTML = '<input type="text" placeholder="Search precinct..." id="search-input"><div class="search-results" id="search-results"></div>';
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+};
+searchCtrl.addTo(map);
+
+// Tooltip
+const info = L.control({ position: 'topright' });
+info.onAdd = function() {
+  this._div = L.DomUtil.create('div', 'info-tooltip');
+  this._div.style.display = 'none';
+  return this._div;
+};
+info.update = function(props) {
+  if (!props) { this._div.style.display = 'none'; return; }
+  this._div.style.display = 'block';
+  this._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Margin: ${props.pct_margin > 0 ? '+' : ''}${props.pct_margin} pts | ${props.total_votes} votes cast`;
+};
+info.addTo(map);
+
+let precinctLayers = [];
+
+function buildPopup(props) {
+  const cands = props.candidates;
+  let rows = '';
+  cands.forEach((c, i) => {
+    const isWinner = i === 0;
+    const barWidth = Math.max(2, (c.pct / cands[0].pct) * 80);
+    const color = CANDIDATE_COLORS[c.candidate] || '#999';
+    rows += `<tr class="${isWinner ? 'winner' : ''}">
+      <td>${c.candidate}${isWinner ? ' &#x2713;' : ''}</td>
+      <td class="votes">${c.votes.toLocaleString()}</td>
+      <td class="pct">${c.pct}%</td>
+      <td class="bar-cell"><div class="bar" style="width:${barWidth}px;background:${color}"></div></td>
+    </tr>`;
+  });
+
+  return `<div class="results-popup">
+    <h3>${props.Precinct_Cap}</h3>
+    <div class="summary">Total votes cast: <b>${props.total_votes.toLocaleString()}</b> | Margin: <b>${props.pct_margin > 0 ? '+' : ''}${props.pct_margin} pts</b> (${props.margin > 0 ? '+' : ''}${props.margin.toLocaleString()} votes)</div>
+    <table>
+      <tr><th>Candidate</th><th style="text-align:right">Votes</th><th style="text-align:right">%</th><th></th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+fetch('election_results.geojson')
+  .then(r => r.json())
+  .then(data => {
+    const layer = L.geoJSON(data, {
+      style: function(feature) {
+        return {
+          fillColor: getMarginColor(feature.properties.pct_margin),
+          fillOpacity: 0.75,
+          color: '#333',
+          weight: 1.5
+        };
+      },
+      onEachFeature: function(feature, layer) {
+        layer.bindPopup(buildPopup(feature.properties), { maxWidth: 400 });
+        layer.on('mouseover', function() {
+          info.update(feature.properties);
+          this.setStyle({ weight: 3, color: '#000' });
+        });
+        layer.on('mouseout', function() {
+          info.update(null);
+          this.setStyle({ weight: 1.5, color: '#333' });
+        });
+        precinctLayers.push({ name: feature.properties.Precinct_Cap, layer: layer });
+      }
+    }).addTo(map);
+
+    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+
+    // Search
+    const input = document.getElementById('search-input');
+    const results = document.getElementById('search-results');
+    input.addEventListener('input', function() {
+      const q = this.value.toUpperCase();
+      results.innerHTML = '';
+      if (q.length < 2) return;
+      precinctLayers
+        .filter(p => p.name.includes(q))
+        .slice(0, 8)
+        .forEach(p => {
+          const d = document.createElement('div');
+          d.textContent = p.name;
+          d.onclick = function() {
+            map.fitBounds(p.layer.getBounds(), { padding: [50, 50], maxZoom: 14 });
+            p.layer.openPopup();
+            results.innerHTML = '';
+            input.value = '';
+          };
+          results.appendChild(d);
+        });
+    });
+  });
+</script>
+</body>
+</html>

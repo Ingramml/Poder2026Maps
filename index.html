@@ -392,7 +392,7 @@ Promise.all([
 const titleControl = L.control({ position: 'topleft' });
 titleControl.onAdd = function() {
   const div = L.DomUtil.create('div', 'map-title');
-  div.innerHTML = 'CD4 Survey Results<div style="font-size:12px;font-weight:normal;color:#666;margin-top:2px">Updated: Nov 03, 2026</div>';
+  div.innerHTML = 'CD4 Survey Results<div style="font-size:12px;font-weight:normal;color:#666;margin-top:2px">Updated: Nov 09, 2026</div><div style="font-size:12px;margin-top:4px"><a href="election_results.html" style="color:#1565C0;text-decoration:none">View Election Results Map &rarr;</a></div>';
   return div;
 };
 titleControl.addTo(map);
