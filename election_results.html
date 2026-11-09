@@ -276,7 +276,7 @@ fetch('election_results.geojson')
     labelsGroup.addTo(map);
 
     // Osborn School District overlay
-    const osbornLayer = fetch('maricopa_elem_districts.geojson')
+    const osbornPromise = fetch('maricopa_elem_districts.geojson')
       .then(r => r.ok ? r.json() : null)
       .then(gj => {
         if (!gj) return null;
@@ -285,6 +285,34 @@ fetch('election_results.geojson')
         return L.geoJSON(osborn, {
           style: { fillColor: 'transparent', fillOpacity: 0, color: '#e6550d', weight: 3, dashArray: '8,4' },
           interactive: false
+        });
+      });
+
+    // Poder Activity points overlay
+    const poderPromise = fetch('poder_contacts.geojson')
+      .then(r => r.ok ? r.json() : null)
+      .then(gj => {
+        if (!gj) return null;
+        return L.geoJSON(gj, {
+          pointToLayer: function(feature, latlng) {
+            const ca = feature.properties.contact_attempts;
+            let radius;
+            if (ca >= 20000) radius = 18;
+            else if (ca >= 15000) radius = 14;
+            else if (ca >= 10000) radius = 10;
+            else if (ca >= 5000) radius = 7;
+            else radius = 4;
+            return L.circleMarker(latlng, {
+              radius: radius,
+              fillColor: '#ff6600',
+              color: '#cc4400',
+              weight: 1,
+              fillOpacity: 0.7
+            });
+          },
+          onEachFeature: function(feature, layer) {
+            layer.bindPopup(`<div class="results-popup"><h3>${feature.properties.Precinct_Cap}</h3><div class="summary">Poder Contact Attempts: <b>${feature.properties.contact_attempts.toLocaleString()}</b></div></div>`);
+          }
         });
       });
 
@@ -297,8 +325,12 @@ fetch('election_results.geojson')
       'Hermes Dist4 Votes': votesLayer
     };
 
-    osbornLayer.then(ol => {
+    Promise.all([osbornPromise, poderPromise]).then(([ol, pl]) => {
       const overlays = { 'Precinct Labels': labelsGroup };
+      if (pl) {
+        pl.addTo(map);
+        overlays['Poder Activity'] = pl;
+      }
       if (ol) {
         ol.addTo(map);
         overlays['Osborn School District'] = ol;
