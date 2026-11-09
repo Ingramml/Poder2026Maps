@@ -57,6 +57,11 @@
   .search-results { max-height: 150px; overflow-y: auto; margin-top: 4px; }
   .search-results div { padding: 3px 8px; font-size: 12px; cursor: pointer; border-radius: 3px; }
   .search-results div:hover { background: #eee; }
+  .precinct-label {
+    font-family: system-ui; font-size: 10px; font-weight: 600;
+    color: #222; white-space: nowrap; text-align: center;
+    text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+  }
 </style>
 </head>
 <body>
@@ -198,6 +203,18 @@ fetch('election_results.geojson')
           this.setStyle({ weight: 1.5, color: '#333' });
         });
         precinctLayers.push({ name: feature.properties.Precinct_Cap, layer: layer });
+
+        // Add precinct name label
+        const center = layer.getBounds().getCenter();
+        const label = L.marker(center, {
+          icon: L.divIcon({
+            className: 'precinct-label',
+            html: feature.properties.Precinct_Cap,
+            iconSize: [0, 0]
+          }),
+          interactive: false
+        });
+        label.addTo(map);
       }
     }).addTo(map);
 
