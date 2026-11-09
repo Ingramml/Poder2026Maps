@@ -297,10 +297,11 @@ fetch('election_results.geojson')
           pointToLayer: function(feature, latlng) {
             const ca = feature.properties.contact_attempts;
             let radius;
-            if (ca >= 20000) radius = 18;
-            else if (ca >= 15000) radius = 14;
-            else if (ca >= 10000) radius = 10;
-            else if (ca >= 5000) radius = 7;
+            if (ca >= 10000) radius = 24;
+            else if (ca >= 7000) radius = 19;
+            else if (ca >= 5000) radius = 14;
+            else if (ca >= 3000) radius = 10;
+            else if (ca >= 1000) radius = 7;
             else radius = 4;
             return L.circleMarker(latlng, {
               radius: radius,
