@@ -87,11 +87,26 @@ const CANDIDATE_COLORS = {
   'Write-in': '#999999'
 };
 
+const VOTES_COLORS = [
+  { min: 0,   max: 200,  color: '#c6dbef', label: '0 - 200' },
+  { min: 200, max: 400,  color: '#6baed6', label: '200 - 400' },
+  { min: 400, max: 700,  color: '#3182bd', label: '400 - 700' },
+  { min: 700, max: 1000, color: '#08519c', label: '700 - 1,000' },
+  { min: 1000, max: Infinity, color: '#08306b', label: '1,000+' }
+];
+
 function getMarginColor(margin) {
   for (const c of MARGIN_COLORS) {
     if (margin >= c.min && margin < c.max) return c.color;
   }
   return '#053061';
+}
+
+function getVotesColor(votes) {
+  for (const c of VOTES_COLORS) {
+    if (votes >= c.min && votes < c.max) return c.color;
+  }
+  return '#08306b';
 }
 
 const map = L.map('map').setView([33.49, -112.09], 12);
@@ -117,17 +132,26 @@ navCtrl.onAdd = function() {
 };
 navCtrl.addTo(map);
 
-// Legend
-const legend = L.control({ position: 'bottomright' });
-legend.onAdd = function() {
-  const div = L.DomUtil.create('div', 'legend');
-  div.innerHTML = '<h4>Ed Hermes Pct Margin</h4>';
-  for (const c of MARGIN_COLORS) {
-    div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
-  }
-  return div;
+// Legend (updates when layer changes)
+const legendCtrl = L.control({ position: 'bottomright' });
+legendCtrl.onAdd = function() {
+  this._div = L.DomUtil.create('div', 'legend');
+  this.updateMargin();
+  return this._div;
 };
-legend.addTo(map);
+legendCtrl.updateMargin = function() {
+  this._div.innerHTML = '<h4>Ed Hermes Pct Margin</h4>';
+  for (const c of MARGIN_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+};
+legendCtrl.updateVotes = function() {
+  this._div.innerHTML = '<h4>Hermes Votes</h4>';
+  for (const c of VOTES_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+};
+legendCtrl.addTo(map);
 
 // Search
 const searchCtrl = L.control({ position: 'topright' });
@@ -155,6 +179,27 @@ info.addTo(map);
 
 let precinctLayers = [];
 
+function buildVotesPopup(props) {
+  const hermes = props.candidates.find(c => c.candidate === 'HERMES, ED') || {};
+  return `<div class="results-popup">
+    <h3>${props.Precinct_Cap}</h3>
+    <table>
+      <tr><th colspan="2">Hermes Performance</th></tr>
+      <tr><td>Hermes Votes</td><td class="votes"><b>${(props.hermes_votes || 0).toLocaleString()}</b></td></tr>
+      <tr><td>Hermes %</td><td class="votes">${props.hermes_pct}%</td></tr>
+      <tr><td>Total Votes Cast</td><td class="votes">${props.total_votes.toLocaleString()}</td></tr>
+      <tr><td>Margin over 2nd</td><td class="votes">${props.margin > 0 ? '+' : ''}${props.margin.toLocaleString()}</td></tr>
+      <tr><td>Runner-up</td><td class="votes">${props.runner_up} (${(props.runner_up_votes || 0).toLocaleString()})</td></tr>
+      <tr><th colspan="2" style="padding-top:8px">Turnout</th></tr>
+      <tr><td>Registered</td><td class="votes">${(props.registered || 0).toLocaleString()}</td></tr>
+      <tr><td>Turnout %</td><td class="votes">${props.turnout_pct}%</td></tr>
+      <tr><td>Stayed Home</td><td class="votes">${(props.stayed_home || 0).toLocaleString()}</td></tr>
+      <tr><td>Hermes % of Registered</td><td class="votes">${props.hermes_pct_of_registered}%</td></tr>
+      ${props.contact_attempts ? `<tr><th colspan="2" style="padding-top:8px">Poder Activity</th></tr><tr><td>Contact Attempts</td><td class="votes">${props.contact_attempts.toLocaleString()}</td></tr>` : ''}
+    </table>
+  </div>`;
+}
+
 function buildPopup(props) {
   const cands = props.candidates;
   let rows = '';
@@ -180,45 +225,95 @@ function buildPopup(props) {
   </div>`;
 }
 
+function buildElectionLayer(data, styleFn, popupFn, tooltipFn) {
+  return L.geoJSON(data, {
+    style: styleFn,
+    onEachFeature: function(feature, layer) {
+      layer.bindPopup(popupFn(feature.properties), { maxWidth: 400 });
+      layer.on('mouseover', function() {
+        tooltipFn(feature.properties);
+        this.setStyle({ weight: 3, color: '#000' });
+      });
+      layer.on('mouseout', function() {
+        info.update(null);
+        this.setStyle(styleFn(feature));
+      });
+      precinctLayers.push({ name: feature.properties.Precinct_Cap, layer: layer });
+    }
+  });
+}
+
+const labelsGroup = L.layerGroup();
+
 fetch('election_results.geojson')
   .then(r => r.json())
   .then(data => {
-    const layer = L.geoJSON(data, {
-      style: function(feature) {
-        return {
-          fillColor: getMarginColor(feature.properties.pct_margin),
-          fillOpacity: 0.75,
-          color: '#333',
-          weight: 1.5
-        };
-      },
-      onEachFeature: function(feature, layer) {
-        layer.bindPopup(buildPopup(feature.properties), { maxWidth: 400 });
-        layer.on('mouseover', function() {
-          info.update(feature.properties);
-          this.setStyle({ weight: 3, color: '#000' });
-        });
-        layer.on('mouseout', function() {
-          info.update(null);
-          this.setStyle({ weight: 1.5, color: '#333' });
-        });
-        precinctLayers.push({ name: feature.properties.Precinct_Cap, layer: layer });
+    // Pct Margin layer
+    const marginLayer = buildElectionLayer(data,
+      f => ({ fillColor: getMarginColor(f.properties.pct_margin), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
+      props => buildPopup(props),
+      props => info.update(props)
+    );
 
-        // Add precinct name label
-        const center = layer.getBounds().getCenter();
-        const label = L.marker(center, {
-          icon: L.divIcon({
-            className: 'precinct-label',
-            html: feature.properties.Precinct_Cap,
-            iconSize: [0, 0]
-          }),
+    // Hermes Votes layer
+    const votesLayer = buildElectionLayer(data,
+      f => ({ fillColor: getVotesColor(f.properties.hermes_votes), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
+      props => buildVotesPopup(props),
+      props => {
+        info._div.style.display = 'block';
+        info._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Hermes: ${(props.hermes_votes||0).toLocaleString()} votes (${props.hermes_pct}%)`;
+      }
+    );
+
+    // Precinct labels
+    data.features.forEach(f => {
+      const coords = L.geoJSON(f).getBounds().getCenter();
+      labelsGroup.addLayer(L.marker(coords, {
+        icon: L.divIcon({ className: 'precinct-label', html: f.properties.Precinct_Cap, iconSize: [0, 0] }),
+        interactive: false
+      }));
+    });
+    labelsGroup.addTo(map);
+
+    // Osborn School District overlay
+    const osbornLayer = fetch('maricopa_elem_districts.geojson')
+      .then(r => r.ok ? r.json() : null)
+      .then(gj => {
+        if (!gj) return null;
+        const osborn = { type: 'FeatureCollection', features: gj.features.filter(f => f.properties.elemdist === 'OSBORN #8') };
+        if (!osborn.features.length) return null;
+        return L.geoJSON(osborn, {
+          style: { fillColor: 'transparent', fillOpacity: 0, color: '#e6550d', weight: 3, dashArray: '8,4' },
           interactive: false
         });
-        label.addTo(map);
-      }
-    }).addTo(map);
+      });
 
-    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+    // Add default layer and controls
+    marginLayer.addTo(map);
+    map.fitBounds(marginLayer.getBounds(), { padding: [20, 20] });
+
+    const baseLayers = {
+      'Pct Margin (1st vs 2nd)': marginLayer,
+      'Hermes Dist4 Votes': votesLayer
+    };
+
+    osbornLayer.then(ol => {
+      const overlays = { 'Precinct Labels': labelsGroup };
+      if (ol) {
+        ol.addTo(map);
+        overlays['Osborn School District'] = ol;
+      }
+      L.control.layers(baseLayers, overlays, { collapsed: false }).addTo(map);
+    });
+
+    // Update legend when layer changes
+    map.on('baselayerchange', function(e) {
+      if (e.name === 'Hermes Dist4 Votes') {
+        legendCtrl.updateVotes();
+      } else {
+        legendCtrl.updateMargin();
+      }
+    });
 
     // Search
     const input = document.getElementById('search-input');
