@@ -1,0 +1,4 @@
+*.csv
+!combined_Poder_data.csv
+*.txt
+.DS_Store
