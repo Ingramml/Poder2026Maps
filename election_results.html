@@ -102,11 +102,26 @@ function getMarginColor(margin) {
   return '#053061';
 }
 
+const STAYED_HOME_COLORS = [
+  { min: 0,    max: 500,  color: '#fee0d2', label: '0 - 500' },
+  { min: 500,  max: 1000, color: '#fcbba1', label: '500 - 1,000' },
+  { min: 1000, max: 1500, color: '#fc9272', label: '1,000 - 1,500' },
+  { min: 1500, max: 2000, color: '#de2d26', label: '1,500 - 2,000' },
+  { min: 2000, max: Infinity, color: '#a50f15', label: '2,000+' }
+];
+
 function getVotesColor(votes) {
   for (const c of VOTES_COLORS) {
     if (votes >= c.min && votes < c.max) return c.color;
   }
   return '#08306b';
+}
+
+function getStayedHomeColor(val) {
+  for (const c of STAYED_HOME_COLORS) {
+    if (val >= c.min && val < c.max) return c.color;
+  }
+  return '#a50f15';
 }
 
 const map = L.map('map').setView([33.49, -112.09], 12);
@@ -148,6 +163,12 @@ legendCtrl.updateMargin = function() {
 legendCtrl.updateVotes = function() {
   this._div.innerHTML = '<h4>Hermes Votes</h4>';
   for (const c of VOTES_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+};
+legendCtrl.updateStayedHome = function() {
+  this._div.innerHTML = '<h4>Stayed Home (Untapped Voters)</h4>';
+  for (const c of STAYED_HOME_COLORS) {
     this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
   }
 };
@@ -195,6 +216,23 @@ function buildVotesPopup(props) {
       <tr><td>Turnout %</td><td class="votes">${props.turnout_pct}%</td></tr>
       <tr><td>Stayed Home</td><td class="votes">${(props.stayed_home || 0).toLocaleString()}</td></tr>
       <tr><td>Hermes % of Registered</td><td class="votes">${props.hermes_pct_of_registered}%</td></tr>
+      ${props.contact_attempts ? `<tr><th colspan="2" style="padding-top:8px">Poder Activity</th></tr><tr><td>Contact Attempts</td><td class="votes">${props.contact_attempts.toLocaleString()}</td></tr>` : ''}
+    </table>
+  </div>`;
+}
+
+function buildStayedHomePopup(props) {
+  const turnoutPct = props.turnout_pct;
+  const stayedHomePct = (100 - turnoutPct).toFixed(1);
+  return `<div class="results-popup">
+    <h3>${props.Precinct_Cap}</h3>
+    <table>
+      <tr><th colspan="2">Mobilization Opportunity</th></tr>
+      <tr><td>Stayed Home</td><td class="votes"><b>${(props.stayed_home||0).toLocaleString()}</b></td></tr>
+      <tr><td>Registered</td><td class="votes">${(props.registered||0).toLocaleString()}</td></tr>
+      <tr><td>Voted</td><td class="votes">${props.total_votes.toLocaleString()}</td></tr>
+      <tr><td>Turnout %</td><td class="votes">${turnoutPct}%</td></tr>
+      <tr><td>Did Not Vote %</td><td class="votes">${stayedHomePct}%</td></tr>
       ${props.contact_attempts ? `<tr><th colspan="2" style="padding-top:8px">Poder Activity</th></tr><tr><td>Contact Attempts</td><td class="votes">${props.contact_attempts.toLocaleString()}</td></tr>` : ''}
     </table>
   </div>`;
@@ -265,6 +303,16 @@ fetch('election_results.geojson')
       }
     );
 
+    // Stayed Home layer
+    const stayedHomeLayer = buildElectionLayer(data,
+      f => ({ fillColor: getStayedHomeColor(f.properties.stayed_home), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
+      props => buildStayedHomePopup(props),
+      props => {
+        info._div.style.display = 'block';
+        info._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Stayed Home: ${(props.stayed_home||0).toLocaleString()} of ${(props.registered||0).toLocaleString()} registered`;
+      }
+    );
+
     // Precinct labels
     data.features.forEach(f => {
       const coords = L.geoJSON(f).getBounds().getCenter();
@@ -323,7 +371,8 @@ fetch('election_results.geojson')
 
     const baseLayers = {
       'Pct Margin (1st vs 2nd)': marginLayer,
-      'Hermes Dist4 Votes': votesLayer
+      'Hermes Dist4 Votes': votesLayer,
+      'Stayed Home (Untapped)': stayedHomeLayer
     };
 
     Promise.all([osbornPromise, poderPromise]).then(([ol, pl]) => {
@@ -343,6 +392,8 @@ fetch('election_results.geojson')
     map.on('baselayerchange', function(e) {
       if (e.name === 'Hermes Dist4 Votes') {
         legendCtrl.updateVotes();
+      } else if (e.name === 'Stayed Home (Untapped)') {
+        legendCtrl.updateStayedHome();
       } else {
         legendCtrl.updateMargin();
       }
