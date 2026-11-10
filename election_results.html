@@ -68,11 +68,14 @@
 <div id="map"></div>
 <script>
 const MARGIN_COLORS = [
-  { min: -Infinity, max: 0,  color: '#d73027', label: 'Loss' },
-  { min: 0,  max: 5,  color: '#91bfdb', label: '0 - 5 pts' },
-  { min: 5,  max: 15, color: '#4393c3', label: '5 - 15 pts' },
-  { min: 15, max: 30, color: '#2166ac', label: '15 - 30 pts' },
-  { min: 30, max: Infinity, color: '#053061', label: '30+ pts' }
+  { min: -Infinity, max: 0,   color: '#d73027', label: 'Loss' },
+  { min: 0,   max: 27,  color: '#f46d43', label: '0 - 27 votes' },
+  { min: 27,  max: 93,  color: '#fdae61', label: '27 - 93 votes' },
+  { min: 93,  max: 157, color: '#ffffbf', label: '93 - 157 votes' },
+  { min: 157, max: 289, color: '#abd9e9', label: '157 - 289 votes' },
+  { min: 289, max: 451, color: '#74add1', label: '289 - 451 votes' },
+  { min: 451, max: 575, color: '#4575b4', label: '451 - 575 votes' },
+  { min: 575, max: Infinity, color: '#313695', label: '575+ votes' }
 ];
 
 const CANDIDATE_COLORS = {
@@ -155,7 +158,7 @@ legendCtrl.onAdd = function() {
   return this._div;
 };
 legendCtrl.updateMargin = function() {
-  this._div.innerHTML = '<h4>Ed Hermes Pct Margin</h4>';
+  this._div.innerHTML = '<h4>Ed Hermes Raw Vote Margin</h4>';
   for (const c of MARGIN_COLORS) {
     this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
   }
@@ -194,7 +197,7 @@ info.onAdd = function() {
 info.update = function(props) {
   if (!props) { this._div.style.display = 'none'; return; }
   this._div.style.display = 'block';
-  this._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Margin: ${props.pct_margin > 0 ? '+' : ''}${props.pct_margin} pts | ${props.total_votes} votes cast`;
+  this._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Margin: ${props.margin > 0 ? '+' : ''}${props.margin.toLocaleString()} votes | ${props.total_votes.toLocaleString()} votes cast`;
 };
 info.addTo(map);
 
@@ -288,7 +291,7 @@ fetch('election_results.geojson')
   .then(data => {
     // Pct Margin layer
     const marginLayer = buildElectionLayer(data,
-      f => ({ fillColor: getMarginColor(f.properties.pct_margin), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
+      f => ({ fillColor: getMarginColor(f.properties.margin), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
       props => buildPopup(props),
       props => info.update(props)
     );
