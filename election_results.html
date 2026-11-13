@@ -98,11 +98,45 @@ const VOTES_COLORS = [
   { min: 800, max: Infinity, color: '#08306b', label: '800+' }
 ];
 
+const PROJECTION_COLORS = [
+  { min: -Infinity, max: -200, color: '#b2182b', label: 'Under > 200' },
+  { min: -200, max: 0,   color: '#ef8a62', label: 'Under 0 - 200' },
+  { min: 0,   max: 200,  color: '#fddbc7', label: 'Over 0 - 200' },
+  { min: 200, max: 400,  color: '#d1e5f0', label: 'Over 200 - 400' },
+  { min: 400, max: 600,  color: '#67a9cf', label: 'Over 400 - 600' },
+  { min: 600, max: Infinity, color: '#2166ac', label: 'Over 600+' }
+];
+
+const TURNOUT_PCT_COLORS = [
+  { min: -Infinity, max: -5, color: '#b2182b', label: 'Decline > 5 pts' },
+  { min: -5, max: -2, color: '#ef8a62', label: 'Decline 2 - 5 pts' },
+  { min: -2, max: 0,  color: '#fddbc7', label: 'Decline 0 - 2 pts' },
+  { min: 0,  max: 2,  color: '#d1e5f0', label: 'Gain 0 - 2 pts' },
+  { min: 2,  max: 5,  color: '#67a9cf', label: 'Gain 2 - 5 pts' },
+  { min: 5,  max: Infinity, color: '#2166ac', label: 'Gain > 5 pts' }
+];
+
 function getMarginColor(margin) {
   for (const c of MARGIN_COLORS) {
     if (margin >= c.min && margin < c.max) return c.color;
   }
   return '#053061';
+}
+
+function getProjectionColor(diff, redrawn) {
+  if (redrawn || diff === null) return '#b0b0b0';
+  for (const c of PROJECTION_COLORS) {
+    if (diff >= c.min && diff < c.max) return c.color;
+  }
+  return '#2166ac';
+}
+
+function getTurnoutPctColor(pctChg, redrawn) {
+  if (redrawn || pctChg === null) return '#b0b0b0';
+  for (const c of TURNOUT_PCT_COLORS) {
+    if (pctChg >= c.min && pctChg < c.max) return c.color;
+  }
+  return '#2166ac';
 }
 
 const STAYED_HOME_COLORS = [
@@ -174,6 +208,20 @@ legendCtrl.updateStayedHome = function() {
   for (const c of STAYED_HOME_COLORS) {
     this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
   }
+};
+legendCtrl.updateProjection = function() {
+  this._div.innerHTML = '<h4>Projected vs Actual Turnout</h4>';
+  for (const c of PROJECTION_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+  this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:#b0b0b0"></span>Redrawn / No data</div>`;
+};
+legendCtrl.updateTurnoutPct = function() {
+  this._div.innerHTML = '<h4>Turnout % Change (2022→2026)</h4>';
+  for (const c of TURNOUT_PCT_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+  this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:#b0b0b0"></span>Redrawn / No data</div>`;
 };
 legendCtrl.addTo(map);
 
@@ -326,17 +374,23 @@ fetch('election_results.geojson')
     });
     labelsGroup.addTo(map);
 
-    // Osborn School District overlay
-    const osbornPromise = fetch('maricopa_elem_districts.geojson')
+    // School District overlays
+    const districtColors = { 'OSBORN #8': '#e6550d', 'ISAAC #5': '#7b1fa2' };
+    const districtsPromise = fetch('maricopa_elem_districts.geojson')
       .then(r => r.ok ? r.json() : null)
       .then(gj => {
-        if (!gj) return null;
-        const osborn = { type: 'FeatureCollection', features: gj.features.filter(f => f.properties.elemdist === 'OSBORN #8') };
-        if (!osborn.features.length) return null;
-        return L.geoJSON(osborn, {
-          style: { fillColor: 'transparent', fillOpacity: 0, color: '#e6550d', weight: 3, dashArray: '8,4' },
-          interactive: false
-        });
+        if (!gj) return {};
+        const layers = {};
+        for (const [name, color] of Object.entries(districtColors)) {
+          const filtered = { type: 'FeatureCollection', features: gj.features.filter(f => f.properties.elemdist === name) };
+          if (filtered.features.length) {
+            layers[name] = L.geoJSON(filtered, {
+              style: { fillColor: 'transparent', fillOpacity: 0, color: color, weight: 3, dashArray: '8,4' },
+              interactive: false
+            });
+          }
+        }
+        return layers;
       });
 
     // Poder Activity points overlay
@@ -378,15 +432,15 @@ fetch('election_results.geojson')
       'Stayed Home (Untapped)': stayedHomeLayer
     };
 
-    Promise.all([osbornPromise, poderPromise]).then(([ol, pl]) => {
+    Promise.all([districtsPromise, poderPromise]).then(([districts, pl]) => {
       const overlays = { 'Precinct Labels': labelsGroup };
       if (pl) {
         pl.addTo(map);
         overlays['Poder Activity'] = pl;
       }
-      if (ol) {
-        ol.addTo(map);
-        overlays['Osborn School District'] = ol;
+      for (const [name, layer] of Object.entries(districts)) {
+        layer.addTo(map);
+        overlays[name] = layer;
       }
       L.control.layers(baseLayers, overlays, { collapsed: false }).addTo(map);
     });
