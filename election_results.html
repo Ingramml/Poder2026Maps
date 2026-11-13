@@ -161,6 +161,22 @@ function getStayedHomeColor(val) {
   return '#a50f15';
 }
 
+const TURNOUT_COLORS = [
+  { min: 0,  max: 35, color: '#fee5d9', label: '< 35%' },
+  { min: 35, max: 40, color: '#fcbba1', label: '35 - 40%' },
+  { min: 40, max: 45, color: '#fc9272', label: '40 - 45%' },
+  { min: 45, max: 50, color: '#41ab5d', label: '45 - 50%' },
+  { min: 50, max: 55, color: '#238b45', label: '50 - 55%' },
+  { min: 55, max: Infinity, color: '#005a32', label: '55%+' }
+];
+
+function getTurnoutColor(pct) {
+  for (const c of TURNOUT_COLORS) {
+    if (pct >= c.min && pct < c.max) return c.color;
+  }
+  return '#005a32';
+}
+
 const map = L.map('map').setView([33.49, -112.09], 12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap', maxZoom: 19
@@ -206,6 +222,12 @@ legendCtrl.updateVotes = function() {
 legendCtrl.updateStayedHome = function() {
   this._div.innerHTML = '<h4>Stayed Home (Untapped Voters)</h4>';
   for (const c of STAYED_HOME_COLORS) {
+    this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
+  }
+};
+legendCtrl.updateTurnout = function() {
+  this._div.innerHTML = '<h4>Turnout %</h4>';
+  for (const c of TURNOUT_COLORS) {
     this._div.innerHTML += `<div class="legend-item"><span class="legend-color" style="background:${c.color}"></span>${c.label}</div>`;
   }
 };
@@ -289,6 +311,23 @@ function buildStayedHomePopup(props) {
   </div>`;
 }
 
+function buildTurnoutPopup(props) {
+  return `<div class="results-popup">
+    <h3>${props.Precinct_Cap}</h3>
+    <table>
+      <tr><th colspan="2">Turnout</th></tr>
+      <tr><td>Turnout %</td><td class="votes"><b>${props.turnout_pct}%</b></td></tr>
+      <tr><td>Votes Cast</td><td class="votes">${props.total_votes.toLocaleString()}</td></tr>
+      <tr><td>Registered</td><td class="votes">${(props.registered||0).toLocaleString()}</td></tr>
+      <tr><td>Stayed Home</td><td class="votes">${(props.stayed_home||0).toLocaleString()}</td></tr>
+      <tr><th colspan="2" style="padding-top:8px">Hermes</th></tr>
+      <tr><td>Hermes Votes</td><td class="votes">${(props.hermes_votes||0).toLocaleString()}</td></tr>
+      <tr><td>Hermes %</td><td class="votes">${props.hermes_pct}%</td></tr>
+      ${props.contact_attempts ? `<tr><th colspan="2" style="padding-top:8px">Poder Activity</th></tr><tr><td>Contact Attempts</td><td class="votes">${props.contact_attempts.toLocaleString()}</td></tr>` : ''}
+    </table>
+  </div>`;
+}
+
 function buildPopup(props) {
   const cands = props.candidates;
   let rows = '';
@@ -364,6 +403,16 @@ fetch('election_results.geojson')
       }
     );
 
+    // Turnout Pct layer
+    const turnoutLayer = buildElectionLayer(data,
+      f => ({ fillColor: getTurnoutColor(f.properties.turnout_pct), fillOpacity: 0.75, color: '#333', weight: 1.5 }),
+      props => buildTurnoutPopup(props),
+      props => {
+        info._div.style.display = 'block';
+        info._div.innerHTML = `<b>${props.Precinct_Cap}</b><br>Turnout: ${props.turnout_pct}% (${props.total_votes.toLocaleString()} of ${(props.registered||0).toLocaleString()})`;
+      }
+    );
+
     // Precinct labels
     data.features.forEach(f => {
       const coords = L.geoJSON(f).getBounds().getCenter();
@@ -429,7 +478,8 @@ fetch('election_results.geojson')
     const baseLayers = {
       'Pct Margin (1st vs 2nd)': marginLayer,
       'Hermes Dist4 Votes': votesLayer,
-      'Stayed Home (Untapped)': stayedHomeLayer
+      'Stayed Home (Untapped)': stayedHomeLayer,
+      'Turnout Pct': turnoutLayer
     };
 
     Promise.all([districtsPromise, poderPromise]).then(([districts, pl]) => {
@@ -451,6 +501,8 @@ fetch('election_results.geojson')
         legendCtrl.updateVotes();
       } else if (e.name === 'Stayed Home (Untapped)') {
         legendCtrl.updateStayedHome();
+      } else if (e.name === 'Turnout Pct') {
+        legendCtrl.updateTurnout();
       } else {
         legendCtrl.updateMargin();
       }
